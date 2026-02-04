@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REDPACK SCANNER - INYECCIÓN</title>
+    <style>
+        :root {
+            --primary-color: #8a2929ff;
+            --secondary-color: #495057;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --bg-color: #f4f4f4;
+            --card-bg: #ffffff;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background-color: var(--bg-color); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background-color: var(--primary-color); color: white; padding: 15px; text-align: center; font-weight: bold; font-size: 1.2em; }
+        nav { display: flex; background: #212529; height: 55px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        nav button { flex: 1; background: none; border: none; color: #adb5bd; font-weight: bold; cursor: pointer; font-size: 0.85em; }
+        nav button.active { color: white; border-bottom: 4px solid #ffc107; }
+
+        .view { display: none; height: calc(100vh - 120px); overflow-y: auto; }
+        .view.active { display: flex; flex-direction: column; }
+
+        .list-container { flex-grow: 1; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #ddd; margin: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #eee; position: sticky; top: 0; padding: 10px; text-align: left; font-size: 0.8em; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 0.9em; }
+
+        .selector-container { background: white; padding: 10px; border-bottom: 2px solid #ddd; display: flex; flex-direction: column; gap: 5px; }
+        #scanner-input { width: 92%; align-self: center; padding: 15px; font-size: 1.4em; text-align: center; border: 2px solid var(--primary-color); border-radius: 8px; margin: 10px 0; }
+        
+        .btn-delete-small { background: var(--danger-color); color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+        .btn-clear { background: var(--danger-color); color: white; border: none; padding: 15px; width: 100%; font-weight: bold; cursor: pointer; margin-top: auto; }
+        .btn-sync { background: var(--success-color); color: white; border: none; padding: 15px; width: 100%; font-weight: bold; cursor: pointer; }
+        .date-navigator { display: flex; justify-content: space-around; background: #eee; padding: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <header>REDPACK - Control Inyección</header>
+
+    <nav>
+        <button onclick="showView('scanner-view')" id="nav-scanner" class="active">Scanner</button>
+        <button onclick="showView('report-view')" id="nav-report">Total Guías</button>
+    </nav>
+
+    <div class="date-navigator">
+        <span onclick="changeDay(-1)" style="cursor:pointer">◀</span>
+        <span id="current-date-display">DD/MM/AAAA</span>
+        <span onclick="changeDay(1)" style="cursor:pointer">▶</span>
+    </div>
+
+    <div id="scanner-view" class="view active">
+        <div class="selector-container">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <label>SERVICIO:</label>
+                <select id="list-select" onchange="selectList(this.value)" style="flex-grow:1; padding:10px; font-weight:bold;">
+                    <option value="Inyección NextDay">Inyección NextDay</option>
+                    <option value="Inyección SameDay">Inyección SameDay</option>
+                </select>
+            </div>
+        </div>
+        <input type="text" id="scanner-input" placeholder="ESCANEAR GUÍA..." autofocus autocomplete="off">
+        <div style="padding: 0 15px; display: flex; justify-content: space-between;">
+            <strong id="list-title">Lista - Inyección NextDay</strong>
+            <span>Total: <b id="count-per-list">0</b></span>
+        </div>
+        <div class="list-container">
+            <ul id="scanned-list" style="list-style:none; padding:0; margin:0;"></ul>
+        </div>
+        
+        <button onclick="syncHistoryToSheets()" class="btn-sync">SINCRONIZAR TODO A GOOGLE SHEETS</button>
+        <button onclick="clearCurrentList()" class="btn-clear">BORRAR ESTA LISTA (HOY)</button>
+    </div>
+
+    <div id="report-view" class="view">
+        <div class="list-container">
+            <table>
+                <thead><tr><th>GUÍA</th><th>SERVICIO</th><th>ACCIÓN</th></tr></thead>
+                <tbody id="report-table-body"></tbody>
+            </table>
+        </div>
+        <button onclick="resetAllData()" class="btn-clear" style="background: #000;">BORRAR TODO EL HISTORIAL</button>
+    </div>
+
+    <script>
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyHoN08r8jxH4eIF4FASOb2IUrh6f0ss4qCI9xSV7rv1XsDnB5ygmWtvNXYT1qhXt7kkg/exec";
+        
+        let inventory = JSON.parse(localStorage.getItem('redpack_inv_v2')) || {}; 
+        let currentListName = localStorage.getItem('redpack_last_list') || 'Inyección NextDay';
+        let viewDate = new Date();
+
+        function getFormatDate(date) {
+            return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+        }
+
+        function changeDay(offset) {
+            viewDate.setDate(viewDate.getDate() + offset);
+            updateUI();
+        }
+
+        function updateUI() {
+            const dateKey = getFormatDate(viewDate);
+            document.getElementById('current-date-display').textContent = dateKey;
+            
+            const dayData = inventory[dateKey] || {};
+            const list = dayData[currentListName] || [];
+            
+            document.getElementById('list-title').textContent = `Lista - ${currentListName}`;
+            document.getElementById('count-per-list').textContent = list.length;
+            
+            document.getElementById('scanned-list').innerHTML = list.map((item) => `
+                <li style="padding:12px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+                    <span>${item}</span>
+                    <button class="btn-delete-small" onclick="deleteItem('${item}')">X</button>
+                </li>`).reverse().join('');
+
+            document.getElementById('list-select').value = currentListName;
+            renderReport();
+        }
+
+        // Función para enviar una sola guía a Sheets
+        async function sendToSheets(fecha, guia, servicio) {
+            try {
+                await fetch(WEB_APP_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ fecha, guia, servicio })
+                });
+                console.log(`Enviado: ${guia}`);
+            } catch (e) {
+                console.error("Error de conexión al enviar a Sheets");
+            }
+        }
+
+        function processScan(code) {
+            const dateKey = getFormatDate(viewDate);
+            if (code === "") return;
+            if (!/^\d+$/.test(code)) { alert("Solo se permiten números"); return; }
+            
+            if (!inventory[dateKey]) inventory[dateKey] = {};
+            
+            for (let L in inventory[dateKey]) {
+                if (inventory[dateKey][L].includes(code)) {
+                    alert(`Duplicado: La guía ${code} ya existe en ${L}`);
+                    return;
+                }
+            }
+
+            if (!inventory[dateKey][currentListName]) inventory[dateKey][currentListName] = [];
+            inventory[dateKey][currentListName].push(code);
+            save();
+            updateUI();
+
+            // Enviar automáticamente al escanear
+            sendToSheets(dateKey, code, currentListName);
+        }
+
+        // Nueva función para sincronizar todo el historial almacenado
+        async function syncHistoryToSheets() {
+            const btn = document.querySelector('.btn-sync');
+            const originalText = btn.textContent;
+            
+            if (!confirm("¿Deseas subir todo el historial guardado a Google Sheets? Esto puede duplicar datos si ya los habías subido.")) return;
+
+            btn.disabled = true;
+            btn.textContent = "SINCRONIZANDO...";
+            btn.style.background = "#6c757d";
+
+            try {
+                for (let fecha in inventory) {
+                    for (let servicio in inventory[fecha]) {
+                        for (let guia of inventory[fecha][servicio]) {
+                            await sendToSheets(fecha, guia, servicio);
+                        }
+                    }
+                }
+                alert("Sincronización finalizada con éxito.");
+            } catch (error) {
+                alert("Hubo un problema durante la sincronización.");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+                btn.style.background = "var(--success-color)";
+            }
+        }
+
+        function deleteItem(code) {
+            const dateKey = getFormatDate(viewDate);
+            if(confirm(`¿Borrar guía ${code}?`)) {
+                for (let listName in inventory[dateKey]) {
+                    inventory[dateKey][listName] = inventory[dateKey][listName].filter(c => c !== code);
+                }
+                save();
+                updateUI();
+            }
+        }
+
+        function clearCurrentList() {
+            const dateKey = getFormatDate(viewDate);
+            if (confirm(`¿Vaciar la lista ${currentListName} del día ${dateKey}?`)) {
+                if (inventory[dateKey]) {
+                    inventory[dateKey][currentListName] = [];
+                    save();
+                    updateUI();
+                }
+            }
+        }
+
+        function resetAllData() {
+            if (confirm("¿Borrar todo el historial? Esta acción no se puede deshacer.")) {
+                inventory = {};
+                save();
+                updateUI();
+            }
+        }
+
+        function save() {
+            localStorage.setItem('redpack_inv_v2', JSON.stringify(inventory));
+        }
+
+        function selectList(name) { 
+            currentListName = name; 
+            localStorage.setItem('redpack_last_list', name); 
+            updateUI(); 
+        }
+        
+        function renderReport() {
+            const dateKey = getFormatDate(viewDate);
+            const dayData = inventory[dateKey] || {};
+            let rows = [];
+            for (let L in dayData) {
+                dayData[L].forEach(code => {
+                    rows.push(`<tr><td>${code}</td><td>${L}</td><td><button class="btn-delete-small" onclick="deleteItem('${code}')">Borrar</button></td></tr>`);
+                });
+            }
+            document.getElementById('report-table-body').innerHTML = rows.reverse().join('');
+        }
+
+        function showView(id) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+            
+            if(id === 'scanner-view') {
+                document.getElementById('nav-scanner').classList.add('active');
+                document.getElementById('scanner-input').focus();
+            } else {
+                document.getElementById('nav-report').classList.add('active');
+            }
+        }
+
+        document.getElementById('scanner-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { 
+                processScan(e.target.value.trim()); 
+                e.target.value = ''; 
+            }
+        });
+
+        window.onload = updateUI;
+    </script>
+</body>
+</html>
