@@ -59,6 +59,9 @@
                 <select id="list-select" onchange="selectList(this.value)" style="flex-grow:1; padding:10px; font-weight:bold;">
                     <option value="Inyección NextDay">Inyección NextDay</option>
                     <option value="Inyección SameDay">Inyección SameDay</option>
+                    <option value="Sobre Dañado">Sobre Dañado</option>
+                    <option value="Sobre sin Contenido">Sobre sin Contenido</option>
+                    <option value="Mal Entregado">Mal Entregado</option>
                 </select>
             </div>
         </div>
@@ -121,7 +124,6 @@
             renderReport();
         }
 
-        // Función para enviar una sola guía a Sheets
         async function sendToSheets(fecha, guia, servicio) {
             try {
                 await fetch(WEB_APP_URL, {
@@ -130,7 +132,7 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ fecha, guia, servicio })
                 });
-                console.log(`Enviado: ${guia}`);
+                console.log(`Enviado: ${guia} como ${servicio}`);
             } catch (e) {
                 console.error("Error de conexión al enviar a Sheets");
             }
@@ -155,16 +157,14 @@
             save();
             updateUI();
 
-            // Enviar automáticamente al escanear
             sendToSheets(dateKey, code, currentListName);
         }
 
-        // Nueva función para sincronizar todo el historial almacenado
         async function syncHistoryToSheets() {
             const btn = document.querySelector('.btn-sync');
             const originalText = btn.textContent;
             
-            if (!confirm("¿Deseas subir todo el historial guardado a Google Sheets? Esto puede duplicar datos si ya los habías subido.")) return;
+            if (!confirm("¿Deseas subir todo el historial guardado a Google Sheets?")) return;
 
             btn.disabled = true;
             btn.textContent = "SINCRONIZANDO...";
@@ -191,8 +191,10 @@
         function deleteItem(code) {
             const dateKey = getFormatDate(viewDate);
             if(confirm(`¿Borrar guía ${code}?`)) {
-                for (let listName in inventory[dateKey]) {
-                    inventory[dateKey][listName] = inventory[dateKey][listName].filter(c => c !== code);
+                if (inventory[dateKey]) {
+                    for (let listName in inventory[dateKey]) {
+                        inventory[dateKey][listName] = inventory[dateKey][listName].filter(c => c !== code);
+                    }
                 }
                 save();
                 updateUI();
