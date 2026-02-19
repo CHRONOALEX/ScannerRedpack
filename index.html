@@ -58,7 +58,9 @@
                 <label>SERVICIO:</label>
                 <select id="list-select" onchange="selectList(this.value)" style="flex-grow:1; padding:10px; font-weight:bold;">
                     <option value="Inyección NextDay">Inyección NextDay</option>
+                    <option value="Inyección NextDay MP">Inyección NextDay MP</option>
                     <option value="Inyección SameDay">Inyección SameDay</option>
+                    <option value="Inyección Sameday MP">Inyección Sameday MP</option>
                     <option value="Sobre Dañado">Sobre Dañado</option>
                     <option value="Sobre sin Contenido">Sobre sin Contenido</option>
                     <option value="Mal Entregado">Mal Entregado</option>
@@ -92,7 +94,6 @@
     </div>
 
     <script>
-        // REEMPLAZA ESTO CON TU URL DE GOOGLE SCRIPTS
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyHoN08r8jxH4eIF4FASOb2IUrh6f0ss4qCI9xSV7rv1XsDnB5ygmWtvNXYT1qhXt7kkg/exec";
         
         let inventory = JSON.parse(localStorage.getItem('redpack_inv_v2')) || {}; 
@@ -145,12 +146,14 @@
             const dateKey = getFormatDate(viewDate);
             if (code === "") return;
 
+            // Validación de tipos de entrada
             if (currentListName === "No Manifestado(Rojo) / TBM") {
                 if (!/^[a-zA-Z0-9]+$/.test(code)) { 
                     alert("Para TBM solo se permiten letras y números"); 
                     return; 
                 }
             } else {
+                // Todos los servicios de Inyección (incluyendo los nuevos MP) entran aquí
                 if (!/^\d+$/.test(code)) { 
                     alert("Este servicio solo permite números"); 
                     return; 
@@ -171,7 +174,6 @@
             save();
             updateUI();
 
-            // Envío individual al escanear
             sendToSheets({ fecha: dateKey, guia: code, servicio: currentListName });
         }
 
@@ -182,7 +184,6 @@
             btn.disabled = true;
             btn.textContent = "SINCRONIZANDO...";
             
-            // Recopilar todos los datos en un solo array
             let allData = [];
             for (let fecha in inventory) {
                 for (let servicio in inventory[fecha]) {
